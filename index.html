@@ -32,7 +32,7 @@
         .admin-panel { background: #f8f9fa; border: 1px solid #d4af37; padding: 15px; border-radius: 8px; margin-top: 15px; }
     </style>
 </head>
-<body>
+<body onload="loadExcelFromGitHub()">
 
     <div class="navbar">
         <button onclick="showSection('attendanceSection')">تسجيل الحضور للطالبات</button>
@@ -40,11 +40,11 @@
         <button onclick="toggleUploadBox()" style="background: #cb4154; color: white;">⚙️ إعدادات الملف وإدارة الحضور</button>
     </div>
 
-    <!-- صندوق إعدادات الملف وإدارة السجلات (مخفي افتراضياً) -->
+    <!-- صندوق إعدادات الملف وإدارة السجلات -->
     <div id="uploadContainer" class="container hidden" style="max-width: 600px; background: #fffdf0;">
-        <h3 style="margin-top:0; color:#103c68; text-align:center;">📁 تحميل أو تحديث ملف الإكسل</h3>
+        <h3 style="margin-top:0; color:#103c68; text-align:center;">📁 تحديث ملف الإكسل يدوياً (اختياري)</h3>
         <input type="file" id="excelFile" accept=".xlsx, .xls" onchange="handleFile(this)">
-        <div id="fileStatus" style="text-align: center; font-size: 14px; color: #666; margin-top: 5px;">الرجاء اختيار ملف الإكسل الخاص بالطالبات للبدء</div>
+        <div id="fileStatus" style="text-align: center; font-size: 14px; color: #666; margin-top: 5px;">جاري تحميل بيانات الطالبات من المستودع تلقائياً...</div>
 
         <div class="admin-panel">
             <h4 style="margin-top:0; color:#103c68; text-align:center;">🛠️ تعديل، إضافة أو حذف حضور طالبة يدويّاً</h4>
@@ -100,7 +100,7 @@
         <div class="table-wrapper">
             <table>
                 <thead id="table-head">
-                    <tr><th>الرجاء تحميل ملف الإكسل من زر (إعدادات الملف) في الأعلى أولاً</th></tr>
+                    <tr><th>جاري تحميل البيانات...</th></tr>
                 </thead>
                 <tbody id="table-body">
                     <tr><td style="text-align:center;">-</td></tr>
@@ -113,10 +113,48 @@
         let workbook = null;
         let studentsData = [];
         let attendanceData = [];
-        let loadedFileName = "";
+        let loadedFileName = "students_data.xlsx";
 
         // وضع تاريخ اليوم افتراضياً في خانة التاريخ بالإعدادات
         document.getElementById('adminDate').valueAsDate = new Date();
+
+        // دالة لجلب ملف الإكسل تلقائياً من نفس مستودع الجيت هب عند فتح الصفحة
+        function loadExcelFromGitHub() {
+            // اسم الملف الافتراضي في مستودعك على الجيت هب
+            const fileUrl = 'students_data.xlsx'; 
+
+            fetch(fileUrl)
+                .then(response => {
+                    if (!response.ok) throw new Error("لم يتم العثور على ملف الإكسل في المستودع");
+                    return response.arrayBuffer();
+                })
+                .then(arrayBuffer => {
+                    const data = new Uint8Array(arrayBuffer);
+                    workbook = XLSX.read(data, {type: 'array'});
+                    
+                    if(workbook.SheetNames.includes('Students')) {
+                        const sheet = workbook.Sheets['Students'];
+                        studentsData = XLSX.utils.sheet_to_json(sheet);
+                    }
+                    
+                    if(workbook.SheetNames.includes('Attendance')) {
+                        const sheet = workbook.Sheets['Attendance'];
+                        attendanceData = XLSX.utils.sheet_to_json(sheet, {defval: ""});
+                    } else {
+                        attendanceData = JSON.parse(JSON.stringify(studentsData));
+                    }
+
+                    document.getElementById('fileStatus').innerHTML = `✅ تم جلب بيانات الطالبات تلقائياً (${studentsData.length} طالبة)`;
+                    document.getElementById('fileStatus').style.color = "green";
+                    document.getElementById('course').disabled = false;
+                    document.getElementById('submitBtn').disabled = false;
+                })
+                .catch(error => {
+                    console.warn(error);
+                    document.getElementById('fileStatus').innerHTML = `⚠️ لم يتم العثور على ملف (students_data.xlsx) تلقائياً. يمكنك رفعه يدوياً من هنا.`;
+                    document.getElementById('fileStatus').style.color = "#cb4154";
+                });
+        }
 
         function showSection(sectionId) {
             document.getElementById('attendanceSection').classList.add('hidden');
@@ -230,7 +268,6 @@
             document.getElementById('student').value = '';
         }
 
-        // --- أدوات التحكم والإدارة اليدوية للأستاذة ---
         function adminUpdateAttendance() {
             if(!workbook) { alert("الرجاء تحميل ملف الإكسل أولاً!"); return; }
             const nameQuery = document.getElementById('adminStudentName').value.trim();
@@ -249,7 +286,6 @@
                 let sName = String(row['اسم الطالبة'] || '');
                 if(sName.includes(nameQuery)) {
                     if(!(dateVal in row)) {
-                        // إضافة العمود إذا لم يكن موجوداً
                         Object.keys(row).forEach(k => { if(!['المقرر','الشعبة','اسم الطالبة'].includes(k) && !(k in row)) row[k] = '-'; });
                     }
                     row[dateVal] = newStatus;
@@ -271,7 +307,7 @@
             const nameQuery = document.getElementById('adminStudentName').value.trim();
             const msgDiv = document.getElementById('adminMsg');
             if(!nameQuery) {
-                msgDiv.innerText = "الرجاء إكتب اسم الطالبة الجديدة!";
+                msgDiv.innerText = "الرجاء إكتبي اسم الطالبة الجديدة!";
                 msgDiv.style.color = "#cb4154";
                 return;
             }
@@ -280,7 +316,6 @@
             if(!course || !section) return;
 
             let newRow = {'المقرر': course.trim(), 'الشعبة': section.trim(), 'اسم الطالبة': nameQuery};
-            // تعبئة الشروط للتواريخ السابقة بـ -
             if(attendanceData.length > 0) {
                 Object.keys(attendanceData[0]).forEach(k => {
                     if(!['المقرر', 'الشعبة', 'اسم الطالبة'].includes(k)) newRow[k] = '-';
@@ -318,7 +353,7 @@
 
         function downloadExcel() {
             if (!workbook) {
-                alert("الرجاء تحميل ملف الإكسل أولاً من زر (إعدادات الملف)!");
+                alert("الرجاء تحميل ملف الإكسل أولاً!");
                 return;
             }
 
@@ -345,7 +380,7 @@
             
             if(attendanceData.length === 0) {
                 thead.innerHTML = '<tr><th>التنبيه</th></tr>';
-                tbody.innerHTML = '<tr><td style="text-align:center;">الرجاء رفع ملف الإكسل من زر (إعدادات الملف) في الأعلى أولاً</td></tr>';
+                tbody.innerHTML = '<tr><td style="text-align:center;">الرجاء الانتظار حتى يتم تحميل البيانات أو رفع الملف من الإعدادات</td></tr>';
                 return;
             }
 
