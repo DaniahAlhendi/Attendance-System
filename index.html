@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>منصة تحضير الطالبات</title>
+    <!-- مكتبة قراءة والكتابة على ملفات الإكسل محلياً -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #f5f5dc; margin: 0; padding: 0; color: #103c68; }
+        .navbar { background-color: #103c68; padding: 15px; display: flex; justify-content: center; gap: 15px; flex-wrap: wrap;}
+        .navbar button { background-color: #d4af37; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; color: #103c68; font-size: 15px; transition: 0.3s; }
+        .navbar button:hover { background-color: white; }
+        .container { max-width: 95%; margin: 30px auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); border-top: 6px solid #d4af37; }
+        .hidden { display: none; }
+        
+        select, input[type="text"], input[type="file"], input[type="date"], button.submit-btn { width: 100%; max-width: 400px; padding: 12px; margin: 10px auto; display: block; border: 1px solid #103c68; border-radius: 6px; font-size: 16px; box-sizing: border-box; outline: none; background: white; }
+        select:focus, input:focus { border-color: #d4af37; }
+        button.submit-btn { background-color: #103c68; color: white; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        button.submit-btn:hover { background-color: #cb4154; }
+        #msg { font-weight: bold; margin-top: 15px; text-align: center; font-size: 18px; }
+        
+        .action-btn { background-color: #d4af37; color: #103c68; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.3s; font-size: 15px; }
+        .action-btn:hover { background-color: #103c68; color: white; }
+
+        .table-wrapper { overflow-x: auto; margin-top: 20px; border: 1px solid #ddd; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; min-width: 600px; }
+        th, td { padding: 12px; text-align: center; border-bottom: 1px solid #ddd; border-left: 1px solid #eee; white-space: nowrap; }
+        th { background-color: #103c68; color: white; position: sticky; top: 0; }
+        tr:hover { background-color: #f9f9f9; }
+        td:nth-child(3) { text-align: right; font-weight: bold; }
+        
+        .admin-panel { background: #f8f9fa; border: 1px solid #d4af37; padding: 15px; border-radius: 8px; margin-top: 15px; }
+    </style>
+</head>
+<body>
+
+    <div class="navbar">
+        <button onclick="showSection('attendanceSection')">تسجيل الحضور للطالبات</button>
+        <button onclick="showSection('dashboardSection')">لوحة المراقبة (خاص بالأستاذة)</button>
+        <button onclick="toggleUploadBox()" style="background: #cb4154; color: white;">⚙️ إعدادات الملف وإدارة الحضور</button>
+    </div>
+
+    <!-- صندوق إعدادات الملف وإدارة السجلات (مخفي افتراضياً) -->
+    <div id="uploadContainer" class="container hidden" style="max-width: 600px; background: #fffdf0;">
+        <h3 style="margin-top:0; color:#103c68; text-align:center;">📁 تحميل أو تحديث ملف الإكسل</h3>
+        <input type="file" id="excelFile" accept=".xlsx, .xls" onchange="handleFile(this)">
+        <div id="fileStatus" style="text-align: center; font-size: 14px; color: #666; margin-top: 5px;">الرجاء اختيار ملف الإكسل الخاص بالطالبات للبدء</div>
+
+        <div class="admin-panel">
+            <h4 style="margin-top:0; color:#103c68; text-align:center;">🛠️ تعديل، إضافة أو حذف حضور طالبة يدويّاً</h4>
+            
+            <label style="font-weight:bold; font-size:14px; display:block; text-align:right;">اسم الطالبة أو جزء منه:</label>
+            <input type="text" id="adminStudentName" placeholder="اكتبي اسم الطالبة...">
+
+            <label style="font-weight:bold; font-size:14px; display:block; text-align:right;">التاريخ (YYYY-MM-DD):</label>
+            <input type="date" id="adminDate">
+
+            <label style="font-weight:bold; font-size:14px; display:block; text-align:right;">الحالة الجديدة:</label>
+            <select id="adminStatus">
+                <option value="حاضرة ✔️">حاضرة ✔️</option>
+                <option value="-">غائبة / شرطة (-)</option>
+            </select>
+
+            <div style="display: flex; gap: 10px; justify-content: center; margin-top: 15px; flex-wrap: wrap;">
+                <button class="action-btn" onclick="adminUpdateAttendance()" style="background:#103c68; color:white;">تعديل / تسجيل الحضور</button>
+                <button class="action-btn" onclick="adminAddStudent()" style="background:#28a745; color:white;">➕ إضافة طالبة جديدة</button>
+                <button class="action-btn" onclick="adminDeleteStudent()" style="background:#cb4154; color:white;">🗑️ حذف طالبة</button>
+            </div>
+            <div id="adminMsg" style="text-align:center; margin-top:10px; font-weight:bold;"></div>
+        </div>
+    </div>
+
+    <!-- 1. واجهة الطالبات -->
+    <div id="attendanceSection" class="container" style="max-width: 500px;">
+        <h2 style="text-align: center; color: #103c68;">تسجيل الحضور</h2>
+        <select id="course" onchange="updateSections()" disabled>
+            <option value="">1- اختاري المقرر...</option>
+            <option value="HCI2011">HCI2011</option>
+            <option value="CS2105">CS2105</option>
+        </select>
+        
+        <select id="section" onchange="updateStudents()" disabled>
+            <option value="">2- اختاري الشعبة...</option>
+        </select>
+        
+        <select id="student" disabled>
+            <option value="">3- اختاري اسمك...</option>
+        </select>
+        
+        <button class="submit-btn" id="submitBtn" onclick="submitAttendance()" disabled>تأكيد الحضور</button>
+        <div id="msg"></div>
+    </div>
+
+    <!-- 2. واجهة الداشبورد (لوحة المراقبة) -->
+    <div id="dashboardSection" class="container hidden">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+            <h2 style="color: #103c68; margin: 0;">كشف الحضور المجمع</h2>
+            <button class="action-btn" onclick="downloadExcel()">📥 تنزيل وتحديث ملف الإكسل</button>
+        </div>
+        <div class="table-wrapper">
+            <table>
+                <thead id="table-head">
+                    <tr><th>الرجاء تحميل ملف الإكسل من زر (إعدادات الملف) في الأعلى أولاً</th></tr>
+                </thead>
+                <tbody id="table-body">
+                    <tr><td style="text-align:center;">-</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let workbook = null;
+        let studentsData = [];
+        let attendanceData = [];
+        let loadedFileName = "";
+
+        // وضع تاريخ اليوم افتراضياً في خانة التاريخ بالإعدادات
+        document.getElementById('adminDate').valueAsDate = new Date();
+
+        function showSection(sectionId) {
+            document.getElementById('attendanceSection').classList.add('hidden');
+            document.getElementById('dashboardSection').classList.add('hidden');
+            document.getElementById('uploadContainer').classList.add('hidden');
+            document.getElementById(sectionId).classList.remove('hidden');
+            if(sectionId === 'dashboardSection') {
+                renderDashboard();
+            }
+        }
+
+        function toggleUploadBox() {
+            const box = document.getElementById('uploadContainer');
+            box.classList.toggle('hidden');
+        }
+
+        function handleFile(input) {
+            const file = input.files[0];
+            if (!file) return;
+            loadedFileName = file.name;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                workbook = XLSX.read(data, {type: 'array'});
+                
+                if(workbook.SheetNames.includes('Students')) {
+                    const sheet = workbook.Sheets['Students'];
+                    studentsData = XLSX.utils.sheet_to_json(sheet);
+                }
+                
+                if(workbook.SheetNames.includes('Attendance')) {
+                    const sheet = workbook.Sheets['Attendance'];
+                    attendanceData = XLSX.utils.sheet_to_json(sheet, {defval: ""});
+                } else {
+                    attendanceData = JSON.parse(JSON.stringify(studentsData));
+                }
+
+                document.getElementById('fileStatus').innerHTML = `✅ تم رفع الملف بنجاح (${studentsData.length} طالبة)`;
+                document.getElementById('fileStatus').style.color = "green";
+                document.getElementById('course').disabled = false;
+                document.getElementById('submitBtn').disabled = false;
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function updateSections() {
+            const course = document.getElementById('course').value;
+            const secSel = document.getElementById('section');
+            const stuSel = document.getElementById('student');
+            
+            secSel.innerHTML = '<option value="">2- اختاري الشعبة...</option>';
+            stuSel.innerHTML = '<option value="">3- اختاري اسمك...</option>';
+            secSel.disabled = true; stuSel.disabled = true;
+            
+            if(!course) return;
+            const sections = [...new Set(studentsData.filter(r => String(r['المقرر']).trim() === course).map(r => String(r['الشعبة']).trim()))].sort();
+            sections.forEach(s => secSel.innerHTML += `<option value="${s}">${s}</option>`);
+            secSel.disabled = false;
+        }
+
+        function updateStudents() {
+            const course = document.getElementById('course').value;
+            const section = document.getElementById('section').value;
+            const stuSel = document.getElementById('student');
+            
+            stuSel.innerHTML = '<option value="">3- اختاري اسمك...</option>';
+            stuSel.disabled = true;
+            
+            if(!section) return;
+            const students = studentsData.filter(r => String(r['المقرر']).trim() === course && String(r['الشعبة']).trim() === section).map(r => r['اسم الطالبة']);
+            students.forEach(s => stuSel.innerHTML += `<option value="${s}">${s}</option>`);
+            stuSel.disabled = false;
+        }
+
+        function submitAttendance() {
+            const course = document.getElementById('course').value;
+            const section = document.getElementById('section').value;
+            const student = document.getElementById('student').value;
+            const msg = document.getElementById('msg');
+            
+            if(!course || !section || !student) { 
+                msg.innerText = "الرجاء اختيار المقرر والشعبة واسمك بدقة!";
+                msg.style.color = "#cb4154";
+                return; 
+            }
+
+            const today = new Date().toISOString().split('T')[0];
+
+            let sampleRow = attendanceData[0] || {};
+            if(!(today in sampleRow)) {
+                attendanceData.forEach(row => row[today] = '-');
+            }
+
+            let found = false;
+            attendanceData.forEach(row => {
+                if(String(row['المقرر']).trim() === course && String(row['الشعبة']).trim() === section && String(row['اسم الطالبة']).trim() === student) {
+                    row[today] = 'حاضرة ✔️';
+                    found = true;
+                }
+            });
+
+            if(!found) {
+                let newRow = {'المقرر': course, 'الشعبة': section, 'اسم الطالبة': student};
+                newRow[today] = 'حاضرة ✔️';
+                attendanceData.push(newRow);
+            }
+
+            msg.innerText = `تم تسجيل حضورك بنجاح ليوم ${today}!`;
+            msg.style.color = "#008000";
+            document.getElementById('student').value = '';
+        }
+
+        // --- أدوات التحكم والإدارة اليدوية للأستاذة ---
+        function adminUpdateAttendance() {
+            if(!workbook) { alert("الرجاء تحميل ملف الإكسل أولاً!"); return; }
+            const nameQuery = document.getElementById('adminStudentName').value.trim();
+            const dateVal = document.getElementById('adminDate').value;
+            const newStatus = document.getElementById('adminStatus').value;
+            const msgDiv = document.getElementById('adminMsg');
+
+            if(!nameQuery || !dateVal) {
+                msgDiv.innerText = "الرجاء إدخال اسم الطالبة وتحديد التاريخ!";
+                msgDiv.style.color = "#cb4154";
+                return;
+            }
+
+            let count = 0;
+            attendanceData.forEach(row => {
+                let sName = String(row['اسم الطالبة'] || '');
+                if(sName.includes(nameQuery)) {
+                    if(!(dateVal in row)) {
+                        // إضافة العمود إذا لم يكن موجوداً
+                        Object.keys(row).forEach(k => { if(!['المقرر','الشعبة','اسم الطالبة'].includes(k) && !(k in row)) row[k] = '-'; });
+                    }
+                    row[dateVal] = newStatus;
+                    count++;
+                }
+            });
+
+            if(count > 0) {
+                msgDiv.innerText = `✅ تم تحديث حالة ${count} طالبة بنجاح ليوم ${dateVal}!`;
+                msgDiv.style.color = "#008000";
+            } else {
+                msgDiv.innerText = "⚠️ لم يتم العثور على طالبة بهذا الاسم.";
+                msgDiv.style.color = "#cb4154";
+            }
+        }
+
+        function adminAddStudent() {
+            if(!workbook) { alert("الرجاء تحميل ملف الإكسل أولاً!"); return; }
+            const nameQuery = document.getElementById('adminStudentName').value.trim();
+            const msgDiv = document.getElementById('adminMsg');
+            if(!nameQuery) {
+                msgDiv.innerText = "الرجاء إكتب اسم الطالبة الجديدة!";
+                msgDiv.style.color = "#cb4154";
+                return;
+            }
+            let course = prompt("أدخلي رمز المقرر (مثلاً HCI2011):");
+            let section = prompt("أدخلي رقم الشعبة:");
+            if(!course || !section) return;
+
+            let newRow = {'المقرر': course.trim(), 'الشعبة': section.trim(), 'اسم الطالبة': nameQuery};
+            // تعبئة الشروط للتواريخ السابقة بـ -
+            if(attendanceData.length > 0) {
+                Object.keys(attendanceData[0]).forEach(k => {
+                    if(!['المقرر', 'الشعبة', 'اسم الطالبة'].includes(k)) newRow[k] = '-';
+                });
+            }
+            attendanceData.push(newRow);
+            studentsData.push({'المقرر': course.trim(), 'الشعبة': section.trim(), 'اسم الطالبة': nameQuery});
+            
+            msgDiv.innerText = `✅ تم إضافة الطالبة ${nameQuery} بنجاح!`;
+            msgDiv.style.color = "#008000";
+        }
+
+        function adminDeleteStudent() {
+            if(!workbook) { alert("الرجاء تحميل ملف الإكسل أولاً!"); return; }
+            const nameQuery = document.getElementById('adminStudentName').value.trim();
+            const msgDiv = document.getElementById('adminMsg');
+            if(!nameQuery) {
+                msgDiv.innerText = "الرجاء إدخال اسم الطالبة المراد حذفها!";
+                msgDiv.style.color = "#cb4154";
+                return;
+            }
+
+            let initialLen = attendanceData.length;
+            attendanceData = attendanceData.filter(row => !String(row['اسم الطالبة']).includes(nameQuery));
+            studentsData = studentsData.filter(row => !String(row['اسم الطالبة']).includes(nameQuery));
+
+            if(attendanceData.length < initialLen) {
+                msgDiv.innerText = `🗑️ تم حذف طالبة/طالبات مطابقة لـ "${nameQuery}" بنجاح!`;
+                msgDiv.style.color = "#008000";
+            } else {
+                msgDiv.innerText = "⚠️ لم يتم العثور على طالبة بهذا الاسم للحذف.";
+                msgDiv.style.color = "#cb4154";
+            }
+        }
+
+        function downloadExcel() {
+            if (!workbook) {
+                alert("الرجاء تحميل ملف الإكسل أولاً من زر (إعدادات الملف)!");
+                return;
+            }
+
+            const newAttendanceSheet = XLSX.utils.json_to_sheet(attendanceData);
+            const newStudentsSheet = XLSX.utils.json_to_sheet(studentsData);
+            
+            if(workbook.SheetNames.includes('Attendance')) {
+                workbook.Sheets['Attendance'] = newAttendanceSheet;
+            } else {
+                XLSX.utils.book_append_sheet(workbook, newAttendanceSheet, 'Attendance');
+            }
+
+            if(workbook.SheetNames.includes('Students')) {
+                workbook.Sheets['Students'] = newStudentsSheet;
+            }
+
+            XLSX.writeFile(workbook, loadedFileName || 'نظام تحضير الطالبات - HCI2011 & CS2105.xlsx');
+        }
+
+        function renderDashboard() {
+            const thead = document.getElementById('table-head');
+            const tbody = document.getElementById('table-body');
+            thead.innerHTML = ''; tbody.innerHTML = '';
+            
+            if(attendanceData.length === 0) {
+                thead.innerHTML = '<tr><th>التنبيه</th></tr>';
+                tbody.innerHTML = '<tr><td style="text-align:center;">الرجاء رفع ملف الإكسل من زر (إعدادات الملف) في الأعلى أولاً</td></tr>';
+                return;
+            }
+
+            const cols = Object.keys(attendanceData[0]);
+            let headRow = '<tr>';
+            cols.forEach(c => headRow += `<th>${c}</th>`);
+            headRow += '</tr>';
+            thead.innerHTML = headRow;
+
+            attendanceData.forEach(row => {
+                let tr = '<tr>';
+                cols.forEach((c, idx) => {
+                    let val = row[c] || '-';
+                    let style = (idx > 2 && String(val).includes('حاضرة')) ? 'color: #008000; font-weight:bold;' : '';
+                    tr += `<td style="${style}">${val}</td>`;
+                });
+                tr += '</tr>';
+                tbody.innerHTML += tr;
+            });
+        }
+    </script>
+</body>
+</html>
